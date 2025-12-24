@@ -1,0 +1,389 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IMS Activities Excel Formatter – VVM Header & Auto Date</title>
+  <!-- Proper SheetJS include for Excel parsing -->
+  https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js</script>
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --text:#e5e7eb; --muted:#9ca3af; --accent:#38bdf8; }
+    html, body { height: 100%; }
+    body { margin: 0; font-family: Segoe UI, Roboto, Arial, sans-serif; background: linear-gradient(135deg, var(--bg), #111827); color: var(--text); }
+    .container { max-width: 1140px; margin: 28px auto; padding: 0 16px; }
+    header { margin-bottom: 16px; }
+    h1 { margin: 0 0 8px; font-size: 1.7rem; }
+    .sub { color: var(--muted); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .card { background: var(--card); border: 1px solid #1f2937; border-radius: 12px; padding: 14px; }
+    .card h2 { margin: 0 0 10px; font-size: 1.1rem; }
+    label { display:block; margin: 8px 0 6px; color: var(--muted); }
+    input[type="text"], input[type="file"], textarea, select {
+      width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #334155;
+      background: #0b1220; color: var(--text);
+    }
+    textarea { min-height: 160px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .row { display:flex; gap:8px; align-items:center; }
+    .row > * { flex: 1; }
+    .btn { display:inline-flex; align-items:center; gap:8px; padding: 10px 14px; border-radius: 8px; border: 1px solid #334155; color: var(--text); background: #0b1220; cursor:pointer; }
+    .btn.primary { background: #0ea5e9; border-color:#0ea5e9; color:#001b2e; font-weight: 700; }
+    .btn.secondary { background: #111827; }
+    .btn.warn { background: #1f2937; border-color:#f59e0b; color:#f59e0b; }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+    .codebox { background:#0b1220; border:1px solid #334155; border-radius:12px; padding:12px; overflow:auto; max-height: 280px; }
+    pre { margin:0; white-space:pre-wrap; }
+    .hint { color: var(--muted); font-size: .92rem; }
+    .small { font-size: .85rem; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>IMS Activities Excel Formatter</h1>
+    <div class="sub">
+      Upload Excel/CSV or paste tabular text. Rows with “Cancelled” in any Status (J/K) are excluded from details.
+      Header switches to VVM format when Completed is selected. Date auto-fills based on status.
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- INPUT & SETTINGS -->
+    <div class="card">
+      <h2>1) Input</h2>
+      <label for="date">Date (auto-changes with Status; you can override):</label>
+      <input id="date" type="text" placeholder="DD-Month-YYYY" />
+
+      <div class="row">
+        <div>
+          <label for="file">Excel/CSV file (.xlsx/.xls/.csv/.tsv/.txt)</label>
+          <input id="file" type="file" accept=".xlsx,.xls,.csv,.tsv,.txt" />
+        </div>
+        <div>
+          <label for="sheetName">Sheet name (optional for .xlsx/.xls)</label>
+          <input id="sheetName" type="text" placeholder="Leave blank for first sheet" />
+        </div>
+      </div>
+
+      <label for="paste">OR paste grid text (Row1 headers: must include "Node Type", "PE Purpose"; optional "Status" (J/K), "PE Category" (L))</label>
+      <textarea id="paste" placeholder="PE NO\tNode Type\tCircle\tPE Purpose\tStatus\tAlternate Status\tPE Category
+1001\tCFX\tPB\tTo Update the PSAP DB...\tCompleted\t\tChange
+1002\tSBC\tTN\tCR in SBC...\t\tCancelled\tRollback
+"></textarea>
+
+      <div class="row" style="margin-top:8px;">
+        <label style="flex:none;">Font-color filter:</label>
+        <select id="fontFilter">
+          <option value="black" selected>Include only Node Type cells with Black / Automatic font</option>
+          <option value="any">Include all rows (ignore font color)</option>
+        </select>
+      </div>
+
+      <!-- Manual status selection drives header & details (cancelled rows excluded) -->
+      <div class="row" style="margin-top:8px;">
+        <label style="flex:none;">Status:</label>
+        <select id="statusPicker">
+          <option value="Planned Tonight" selected>---  *Planned Tonight*</option>
+          <option value="Completed">---  *Completed*</option>
+        </select>
+      </div>
+
+      <div class="row" style="margin-top:10px;">
+        <button class="btn primary" onclick="processFile()">Parse File ▶</button>
+        <button class="btn secondary" onclick="processPaste()">Parse Pasted Text ▶</button>
+        <button class="btn warn" onclick="clearInputs()">Clear</button>
+      </div>
+      <div id="err" class="error" style="margin-top:8px;color:#ef4444;"></div>
+
+      <div class="codebox" style="margin-top:10px;">
+        <pre id="log" class="small"></pre>
+      </div>
+    </div>
+
+    <!-- OUTPUT -->
+    <div class="card">
+      <h2>2) Output (Final Text)</h2>
+      <div class="row">
+        <button class="btn primary" onclick="copyOutput()">Copy Output</button>
+        <button class="btn secondary" onclick="downloadTXT()">Download .txt</button>
+        
+      </div>
+      <label style="margin-top:10px;">Formatted Output</label>
+      <textarea id="output" style="min-height:300px;" readonly></textarea>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px;">
+    <h2>Logic</h2>
+    <div class="hint small">
+      <ul>
+        <li>Headers required: <code>Node Type</code>, <code>PE Purpose</code>. Optional: any <code>Status</code> columns (J/K), <code>PE Category</code> (L).</li>
+        <li>Cancelled detection: if <em>any</em> Status column contains “Cancelled” (case-insensitive), that row is excluded from details and counted in the header.</li>
+        <li>If Status = <strong>Completed</strong>, header becomes:<br/>
+          <code>VVM Status {Pretty Date} completed {completedCount}/{totalCount} ({totalCount} PE Category) {completedCount} PE's Completed, {cancelledCount} Cancelled</code>
+        </li>
+        <li>Immediately after header, the page prints:<br/>
+          <code>PE Category (Completed): cat1, cat2, ...</code> (unique values from L for non‑cancelled rows).
+        </li>
+        <li>Summary uses <strong>Node Type</strong> counts from non‑cancelled rows (to match the detail lines). Detail lines use the selected status for all included rows.</li>
+        <li><strong>Auto Date</strong>: Planned Tonight → Today; Completed → Previous day (localized to your device time).</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---------- Utilities ----------
+const norm  = s => String(s||'').trim();
+const lower = s => norm(s).toLowerCase();
+
+function setError(msg){ document.getElementById('err').textContent = msg||''; }
+function log(msg){ document.getElementById('log').textContent += (msg+'\n'); }
+function clearLog(){ document.getElementById('log').textContent=''; }
+function clearInputs(){
+  document.getElementById('file').value='';
+  document.getElementById('paste').value='';
+  document.getElementById('output').value='';
+  clearLog(); setError('');
+}
+
+// Format "DD-Month-YYYY"
+function formatDDMonthYYYY(d){
+  const months = ["January","February","March","April","May","June",
+                  "July","August","September","October","November","December"];
+  const dd = String(d.getDate()).padStart(2,'0');
+  const m  = months[d.getMonth()];
+  const yyyy = d.getFullYear();
+  return `${dd}-${m}-${yyyy}`;
+}
+
+// Pretty date: "20-December-2025" -> "20 December 2025"
+function prettyDate(s){
+  return (s || 'DATE-HERE').replace(/-/g,' ').replace(/\s+/g,' ').trim();
+}
+
+// Auto date selection based on status
+function autoSelectDate(){
+  const status = document.getElementById('statusPicker').value;
+  const now = new Date();
+  let pick = new Date(now); // default today
+  if(status === 'Completed'){
+    // previous day
+    pick.setDate(now.getDate() - 1);
+  }
+  document.getElementById('date').value = formatDDMonthYYYY(pick);
+}
+
+// ---------- Header / Summary / Details builder ----------
+function findHeaderIndexes(headers){
+  let nodeIdx = -1, purposeIdx = -1, catIdx = -1;
+  const statusIdxs = [];
+  headers.forEach((h,i)=>{
+    const hx = lower(h);
+    if(hx === 'node type')    nodeIdx = i;
+    if(hx === 'pe purpose')   purposeIdx = i;
+    if(hx === 'pe category')  catIdx   = i;       // L column
+    if(hx.includes('status')) statusIdxs.push(i); // J/K etc.
+  });
+  return {nodeIdx, purposeIdx, statusIdxs};
+}
+
+function buildOutput(dateStr, rows){
+  const useFont = document.getElementById('fontFilter').value === 'black';
+  const selectorStatus = document.getElementById('statusPicker').value; // Planned Tonight | Completed
+
+  // Apply Node Type font-color filter (Excel only); CSV/paste treated as Automatic/Black
+  const filtered = rows.filter(r => useFont ? (r.fontBlack !== false) : true);
+  if(filtered.length === 0){ setError('No rows after font-color filtering. Try "Include all rows".'); return; }
+
+  // Cancelled detection: if ANY status col says "cancelled", mark row cancelled
+  const cancelledRows    = filtered.filter(r => r.statuses.some(s => lower(s).includes('cancelled')));
+  const nonCancelledRows = filtered.filter(r => !r.statuses.some(s => lower(s).includes('cancelled')));
+
+  const totalCount     = filtered.length;
+  const cancelledCount = cancelledRows.length;
+  const completedRows  = nonCancelledRows;      // rows included in details and completed counts
+  const completedCount = completedRows.length;
+
+  // Unique PE Category list (L column) among completed rows
+  const uniquePECategorySet = new Set();
+  completedRows.forEach(r => { const k = norm(r.peCategory); if(k) uniquePECategorySet.add(k); });
+  const peCategoryList = [...uniquePECategorySet];
+
+  // Node Type summary dict from completed rows (to match details)
+  const nodeTypeDict = new Map();
+  completedRows.forEach(r => {
+    const k = norm(r.nodeType); if(!k) return;
+    nodeTypeDict.set(k, (nodeTypeDict.get(k)||0) + 1);
+  });
+
+  // Header line (Completed vs Planned Tonight)
+  let headerLine;
+  if(selectorStatus === 'Completed'){
+    // EXACT string per your spec:
+    // VVM Status {Pretty Date} completed {completedCount}/{totalCount} ({totalCount} {PE Category}) {completedCount} PE's Completed, {cancelledCount} Cancelled
+    headerLine =
+      `VVM Status ${prettyDate(dateStr)} completed ${completedCount}/${totalCount} ` +
+      `(${totalCount} PE Category) ${completedCount} PE's Completed, ${cancelledCount} Cancelled`;
+  } else {
+    headerLine = `Tonight Planned IMS activities ${dateStr}`;
+  }
+
+  // Build output
+  let out = '';
+  out += `${headerLine}\n`;
+  // Append PE Category list line (from L column) right after header
+  if(peCategoryList.length){
+    out += `\nPE Category (Completed): ${peCategoryList.join(', ')}\n`;
+  }
+  out += `\n`;
+
+  // Summary lines (Node Type -> -count) using completed rows
+  [...nodeTypeDict.keys()].forEach(k => { out += `${k}\t-${nodeTypeDict.get(k)}\n`; });
+
+  // Section heading & detail lines (exclude cancelled)
+  out += `\n\n\n\n*Key PE Details*\n\n`;
+  completedRows.forEach((r,i)=>{
+    const n = (i+1)+'-';
+    const desc = norm(r.purpose);
+    out += `${n}\t${desc}\t---\t*${selectorStatus}*\n\n`;
+  });
+
+  document.getElementById('output').value = out.trimEnd();
+  setError('');
+}
+
+// ---------- PASTE handler ----------
+function processPaste(){
+  clearLog(); setError('');
+  const text = document.getElementById('paste').value.trim();
+  if(!text){ setError('Paste grid text first.'); return; }
+
+  const lines = text.split(/\r?\n/).filter(l=>l.length>0);
+  const delim = (lines[0].includes('\t')) ? '\t' : ',';
+  const headers = lines[0].split(delim).map(s=>s.trim());
+  const {nodeIdx, purposeIdx, catIdx, statusIdxs} = findHeaderIndexes(headers);
+
+  if(nodeIdx<0 || purposeIdx<0){
+    setError('Headers must include "Node Type" and "PE Purpose" in row 1.');
+    return;
+  }
+
+  const rows = lines.slice(1).map(l => {
+    const cols = l.split(delim);
+    const statuses = statusIdxs.length ? statusIdxs.map(idx => cols[idx]||'') : ['']; // J/K/etc.
+    return {
+      nodeType:   cols[nodeIdx]   || '',
+      purpose:    cols[purposeIdx]|| '',
+      peCategory: (catIdx>=0 ? (cols[catIdx]||'') : ''),
+      statuses,
+      fontBlack:  true // pasted text has no styles; treat as Automatic/Black
+    };
+  });
+
+  log(`Parsed ${rows.length} data rows from pasted text.`);
+  buildOutput(document.getElementById('date').value || 'DATE-HERE', rows);
+}
+
+// ---------- FILE handler (Excel/CSV) ----------
+function processFile(){
+  clearLog(); setError('');
+  const f = document.getElementById('file').files[0];
+  if(!f){ setError('Choose a file first.'); return; }
+  const ext = (f.name.split('.').pop()||'').toLowerCase();
+  const reader = new FileReader();
+
+  reader.onload = e => {
+    try{
+      const data = e.target.result;
+      if(ext==='csv' || ext==='tsv' || ext==='txt'){
+        const text = new TextDecoder().decode(new Uint8Array(data));
+        document.getElementById('paste').value = text;
+        processPaste();
+        return;
+      }
+      if(typeof XLSX === 'undefined'){ setError('XLSX library not loaded.'); return; }
+      const wb = XLSX.read(data, {type:'array', cellStyles:true});
+      const sheetName = document.getElementById('sheetName').value.trim() || wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      if(!ws){ setError(`Sheet not found: ${sheetName}`); return; }
+
+      const aoa = XLSX.utils.sheet_to_json(ws, {header:1, blankrows:false});
+      if(!aoa || aoa.length===0){ setError('Empty sheet.'); return; }
+      const headers = (aoa[0]||[]).map(String);
+      const {nodeIdx, purposeIdx, catIdx, statusIdxs} = findHeaderIndexes(headers);
+      if(nodeIdx<0 || purposeIdx<0){ setError('Headers must include "Node Type" and "PE Purpose" in row 1.'); return; }
+
+      // Column letter helper (for style read on Node Type)
+      const colLetter = idx => { let n=idx+1,s=''; while(n>0){ let r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26);} return s; };
+      const nodeCol = colLetter(nodeIdx);
+
+      const rows = [];
+      for(let r=1; r<aoa.length; r++){
+        const rowVals = aoa[r]||[];
+        const nodeType   = String(rowVals[nodeIdx]   || '');
+        const purpose    = String(rowVals[purposeIdx]|| '');
+        const peCategory = (catIdx>=0) ? String(rowVals[catIdx]||'') : '';
+
+        // collect all status columns for this row
+        const statuses = statusIdxs.length ? statusIdxs.map(idx => String(rowVals[idx]||'')) : [''];
+
+        // Node Type font-color (best-effort)
+        const addr = nodeCol + (r+1); // e.g., B2
+        const cell = ws[addr];
+        let fontBlack = true;
+        if(cell && cell.s && cell.s.font && cell.s.font.color){
+          const c = cell.s.font.color.rgb || cell.s.font.color.theme || '';
+          const rgb = String(c).toUpperCase();
+          if(rgb && rgb!=='FF000000' && rgb!=='000000') fontBlack = false;
+        }
+
+        rows.push({nodeType, purpose, peCategory, statuses, fontBlack});
+      }
+
+      log(`Parsed ${rows.length} data rows from sheet "${sheetName}" of ${f.name}.`);
+      buildOutput(document.getElementById('date').value || 'DATE-HERE', rows);
+    }catch(err){
+      console.error(err); setError('Failed to parse file. See console for details.');
+    }
+  };
+  reader.onerror = () => setError('File read error.');
+  reader.readAsArrayBuffer(f);
+}
+
+// ---------- Output helpers ----------
+function copyOutput(){
+  const out = document.getElementById('output').value;
+  if(!out){ setError('No output to copy. Parse data first.'); return; }
+  navigator.clipboard.writeText(out).then(()=>setError('Copied output to clipboard.')).catch(()=>setError('Copy failed.'));
+}
+function downloadTXT(){
+  const out = document.getElementById('output').value;
+  if(!out){ setError('No output to download.'); return; }
+  const blob = new Blob([out],{type:'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ims-activities-${(document.getElementById('date').value||'DATE').replace(/\s+/g,'-')}.txt`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function downloadHTML(){
+  const out = document.getElementById('output').value;
+  if(!out){ setError('No output to download.'); return; }
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>IMS Activities</title><style>body{font-family:Segoe UI,Arial,sans-serif;padding:20px;white-space:pre-wrap}</style></head><body>${out.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}</body></html>`;
+  const blob = new Blob([html],{type:'text/html'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ims-activities-${(document.getElementById('date').value||'DATE').replace(/\s+/g,'-')}.html`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ---------- Init: set date based on default status ----------
+document.addEventListener('DOMContentLoaded', () => {
+  autoSelectDate();
+  document.getElementById('statusPicker').addEventListener('change', autoSelectDate);
+});
+</script>
+</body>
+</html>
