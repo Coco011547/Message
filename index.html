@@ -24,21 +24,22 @@
 <body>
   <h1>IMS Activities Excel Formatter – VVM Header & Auto Date</h1>
   <p class="muted small">
-    Upload Excel/CSV or paste tabular text. Rows with “Cancelled” in any Status (J/K) are excluded from details.
-    Header switches to VVM format when Completed is selected. Date auto-fills based on status.
+    Upload CSV/TSV/TXT or paste tabular text. Rows with “Cancelled” in any Status (J/K) are excluded from details.
+    When Status = Completed, header lists unique PE Categories from column L (excluding “NSA”). Dates auto-fill based on status.
   </p>
 
+  <!-- 1) Input -->
   <h2>1) Input</h2>
   <label for="dateInput">Date (auto-changes with Status; you can override):</label>
   <input id="dateInput" type="date" />
 
-  <label for="fileInput">Excel/CSV file (.xlsx/.xls/.csv/.tsv/.txt)</label>
+  <label for="fileInput">CSV/TSV/TXT file</label>
   <input id="fileInput" type="file" />
 
-  <label for="sheetName">Sheet name (optional for .xlsx/.xls)</label>
+  <label for="sheetName">Sheet name (optional; ignored for CSV/TSV/TXT)</label>
   <input id="sheetName" type="text" placeholder="e.g., Sheet1" />
 
-  <label for="gridText">OR paste grid text (Row1 headers: must include "Node Type", "PE Purpose"; optional "Status" (J/K), "PE Category" (L))</label>
+  <label for="gridText">OR paste grid text (Row1 headers must include "Node Type", "PE Purpose"; optional "Status" (J/K), "PE Category" (L))</label>
   <textarea id="gridText" class="mono" placeholder="Node Type,PE Purpose,Status J,Status K,PE Category&#10;MSC,Integration,Completed,,Core"></textarea>
 
   <label for="fontColorFilter">Font-color filter:</label>
@@ -50,8 +51,8 @@
   <label for="statusSelect">Status:</label>
   <select id="statusSelect">
     <option value="">---</option>
-    <option value="Planned Tonight">*Planned Tonight*</option>
-    <option value="Completed">*Completed*</option>
+    <option value="Planned Tonight">Planned Tonight</option>
+    <option value="Completed">Completed</option>
   </select>
   <div style="margin-top:8px;">
     <button id="parseFileBtn">Parse File ▶</button>
@@ -59,6 +60,7 @@
     <button id="clearBtn">Clear</button>
   </div>
 
+  <!-- 2) Output -->
   <h2>2) Output (Final Text)</h2>
   <div style="margin-bottom:8px;">
     <button id="copyBtn">Copy Output</button>
@@ -67,7 +69,7 @@
   </div>
   <div id="formattedOutput" class="output mono"></div>
 
-  <!-- New: Send to WhatsApp -->
+  <!-- Send to WhatsApp -->
   <h2>Send to WhatsApp</h2>
   <div class="row">
     <div class="col">
@@ -78,30 +80,24 @@
   <button id="sendWhatsAppBtn">Send WhatsApp</button>
   <span class="small muted">Sends via your Vercel backend using Twilio’s WhatsApp API.</span>
 
+  <!-- Logic section (documentation) -->
   <h2>Logic</h2>
   <pre class="mono small">
-Node Type
-PE Purpose
-Status
-PE Category
-- Headers required: Node Type, PE Purpose. Optional: any Status columns (J/K), PE Category (L).
-- Cancelled detection: if any Status column contains “Cancelled” (case-insensitive), that row is excluded from details and counted in the header.
+Required headers: "Node Type", "PE Purpose". Optional: "Status"/"Status J"/"Status K", "PE Category" (L).
+Cancelled detection: if any Status column contains "Cancelled" (case-insensitive), the row is excluded from details and counted in the header.
+Normal header (non-Completed):
 VVM Status {Pretty Date} completed {completedCount}/{totalCount} ({totalCount} PE Category)
 {completedCount} PE's Completed, {cancelledCount} Cancelled
-- If Status = Completed, header becomes:
-PE Category (Completed): cat1, cat2, ...
-- Immediately after header, the page prints: (unique values from L for non‑cancelled rows).
-- NSA is excluded from the Completed category list (case-insensitive). If none left, shows "—".
-- Auto Date: Planned Tonight → Today; Completed → Previous day (localized to your device time).
+If Status = Completed:
+PE Category (Completed): cat1, cat2, ... (unique L values for non-cancelled rows, excluding NSA; shows "—" if none)
+Auto Date: Planned Tonight → today; Completed → previous day (localized to device).
   </pre>
 
   <script>
-    const API_URL = 'https://YOUR-VERCEL-PROJECT.vercel.app/api/send-message';
-    // === CONFIG: Set your Vercel API endpoint here ===
-    // Replace with your actual URL from Vercel Deployments page.
-    const API_URL = 'https://YOUR-VERCEL-PROJECT.vercel.app/api/send-message';
+    /*** CONFIG: Set your Vercel API endpoint here ***/
+    const API_URL = 'https://YOUR-VERCEL-PROJECT.vercel.app/api/send-message'; // TODO: replace with your real URL
 
-    // === Helper: exclude categories (case-insensitive) ===
+    /*** Helpers ***/
     const EXCLUDED_CATEGORIES = ["NSA"];
     function excludeCategoriesCaseInsensitive(list, excluded = EXCLUDED_CATEGORIES) {
       const exSet = new Set(excluded.map(s => (s || "").trim().toLowerCase()));
@@ -110,8 +106,6 @@ PE Category (Completed): cat1, cat2, ...
         return val && !exSet.has(val.toLowerCase());
       });
     }
-
-    // === Utilities ===
     function todayISO(){ const d=new Date(); return d.toISOString().slice(0,10); }
     function yesterdayISO(){ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); }
     function prettyDateFromISO(iso){
@@ -119,10 +113,19 @@ PE Category (Completed): cat1, cat2, ...
       const d = new Date(iso);
       return d.toLocaleDateString(undefined,{day:"2-digit",month:"short",year:"numeric"});
     }
-    function csvToRows(text){ const lines=text.trim().split(/\r?\n/); return lines.map(l=>l.split(/,|\t/)); }
+    // CSV/TSV/semicolon-friendly parser
+    function csvToRows(text){
+      const lines = text.trim().split(/\r?\n/);
+      return lines.map(line => {
+        if (line.includes('\t')) return line.split('\t');  // tab-delimited
+        if (line.includes(','))  return line.split(',');   // comma-delimited
+        if (line.includes(';'))  return line.split(';');   // semicolon-delimited
+        return [line]; // fallback
+      });
+    }
     function unique(arr){ return Array.from(new Set(arr)); }
 
-    // === Core formatting (keeps original header strings) ===
+    /*** Core formatting ***/
     function formatOutput(rows, statusSelection) {
       if (!rows || rows.length === 0) return "No rows parsed.";
       const headers = rows[0].map(h=>h.trim());
@@ -174,14 +177,13 @@ PE Category (Completed): cat1, cat2, ...
       return headerText + printedCatLine + summaryLine + details;
     }
 
-    // === Wiring ===
+    /*** Wiring ***/
     const formattedOutputEl = document.getElementById("formattedOutput");
     const statusSelectEl = document.getElementById("statusSelect");
     let parsedRows = [];
 
     function render(){
-      const statusSel = statusSelectEl.value === "*Completed*" ? "Completed"
-                      : (statusSelectEl.value === "*Planned Tonight*" ? "Planned Tonight" : "");
+      const statusSel = statusSelectEl.value || "";   // FIX: use actual option values
       const text = formatOutput(parsedRows, statusSel);
       formattedOutputEl.textContent = text;
     }
@@ -235,7 +237,7 @@ PE Category (Completed): cat1, cat2, ...
       return (s||"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
     }
 
-    // === Send to WhatsApp via Vercel endpoint ===
+    // Send to WhatsApp via Vercel endpoint
     document.getElementById('sendWhatsAppBtn').addEventListener('click', async () => {
       const to = (document.getElementById('waNumber').value || '').trim();
       const body = document.getElementById('formattedOutput').textContent || '';
