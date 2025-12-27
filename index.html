@@ -24,8 +24,7 @@
 <body>
   <h1>IMS Activities Excel Formatter – VVM Header & Auto Date</h1>
   <p class="muted small">
-    Upload CSV/TSV/TXT or paste tabular text. Rows with “Cancelled” in any Status (J/K) are excluded from details.
-    When Status = Completed, header lists unique PE Categories from column L (excluding “NSA”). Dates auto-fill based on status.
+    Paste CSV/TSV text or upload file. When <b>Completed</b> is selected, the header uses VVM format and includes Node Type counts and Key PE Details.
   </p>
 
   <!-- 1) Input -->
@@ -80,17 +79,18 @@
   <button id="sendWhatsAppBtn">Send WhatsApp</button>
   <span class="small muted">Sends via your Vercel backend using Twilio’s WhatsApp API.</span>
 
-  <!-- Logic section (documentation) -->
+  <!-- Logic docs -->
   <h2>Logic</h2>
   <pre class="mono small">
 Required headers: "Node Type", "PE Purpose". Optional: "Status"/"Status J"/"Status K", "PE Category" (L).
-Cancelled detection: if any Status column contains "Cancelled" (case-insensitive), the row is excluded from details and counted in the header.
-Normal header (non-Completed):
-VVM Status {Pretty Date} completed {completedCount}/{totalCount} ({totalCount} PE Category)
-{completedCount} PE's Completed, {cancelledCount} Cancelled
-If Status = Completed:
-PE Category (Completed): cat1, cat2, ... (unique L values for non-cancelled rows, excluding NSA; shows "—" if none)
-Auto Date: Planned Tonight → today; Completed → previous day (localized to device).
+Cancelled: if any Status column contains "Cancelled" (case-insensitive), the row is excluded from details and counted in the header.
+Completed header:
+VVM Status {DD Month YYYY} completed {completedCount}/{totalCount} ({totalCount} PE Category) {completedCount} PE's Completed, {cancelledCount} Cancelled
+Then Node Type counts:
+{NodeType}\t-{count}
+Then:
+*Key PE Details*
+Numbered detail lines with "*Completed*" in italics.
   </pre>
 
   <script>
@@ -98,22 +98,14 @@ Auto Date: Planned Tonight → today; Completed → previous day (localized to d
     const API_URL = 'https://YOUR-VERCEL-PROJECT.vercel.app/api/send-message'; // TODO: replace with your real URL
 
     /*** Helpers ***/
-    const EXCLUDED_CATEGORIES = ["NSA"];
-    function excludeCategoriesCaseInsensitive(list, excluded = EXCLUDED_CATEGORIES) {
-      const exSet = new Set(excluded.map(s => (s || "").trim().toLowerCase()));
-      return (list || []).filter(c => {
-        const val = (c || "").trim();
-        return val && !exSet.has(val.toLowerCase());
-      });
-    }
     function todayISO(){ const d=new Date(); return d.toISOString().slice(0,10); }
     function yesterdayISO(){ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); }
     function prettyDateFromISO(iso){
       if (!iso) return "";
       const d = new Date(iso);
-      return d.toLocaleDateString(undefined,{day:"2-digit",month:"short",year:"numeric"});
+      // Example: "23 December 2025"
+      return d.toLocaleDateString(undefined,{ day:"2-digit", month:"long", year:"numeric" });
     }
-    // CSV/TSV/semicolon-friendly parser
     function csvToRows(text){
       const lines = text.trim().split(/\r?\n/);
       return lines.map(line => {
@@ -125,25 +117,30 @@ Auto Date: Planned Tonight → today; Completed → previous day (localized to d
     }
     function unique(arr){ return Array.from(new Set(arr)); }
 
-    /*** Core formatting ***/
+    /*** Core formatting tailored to your requested output ***/
     function formatOutput(rows, statusSelection) {
       if (!rows || rows.length === 0) return "No rows parsed.";
       const headers = rows[0].map(h=>h.trim());
       const idx = {}; headers.forEach((h,i)=>{ idx[h]=i; });
+
+      // Required headers
       if (!("Node Type" in idx) || !("PE Purpose" in idx)) {
         return "Missing required headers: Node Type, PE Purpose";
       }
-      const statusCols = ["Status","Status J","Status K"].filter(h=>h in idx).map(h=>idx[h]);
-      const iNodeType = idx["Node Type"], iPEPurpose = idx["PE Purpose"], iPECategory = ("PE Category" in idx)?idx["PE Category"]:null;
 
+      // Optional columns
+      const statusCols = ["Status","Status J","Status K"].filter(h=>h in idx).map(h=>idx[h]);
+      const iNodeType = idx["Node Type"];
+      const iPEPurpose = idx["PE Purpose"];
+
+      // Cancelled?
       function isCancelled(r){ return statusCols.some(ci=>((r[ci]||"").toLowerCase().includes("cancelled"))); }
       const dataRows = rows.slice(1);
       const nonCancelled = dataRows.filter(r=>!isCancelled(r));
+
       const totalCount = nonCancelled.length;
       const completedCount = nonCancelled.filter(r=>statusCols.some(ci=>((r[ci]||"").toLowerCase().includes("completed")))).length;
       const cancelledCount = dataRows.length - nonCancelled.length;
-
-      const details = nonCancelled.map(r=>`- ${(r[iNodeType]||"").trim()} — ${(r[iPEPurpose]||"").trim()} — ${statusSelection||""}`).join("\n");
 
       // Auto date
       const dateInput = document.getElementById("dateInput");
@@ -154,27 +151,42 @@ Auto Date: Planned Tonight → today; Completed → previous day (localized to d
       }
       const prettyDate = prettyDateFromISO(selectedDateISO);
 
-      let headerText = "";
-      let printedCatLine = "";
-      if (statusSelection === "Completed") {
-        let categories = [];
-        if (iPECategory !== null) {
-          categories = nonCancelled.map(r => (r[iPECategory]||"").trim()).filter(c=>c.length>0);
-        }
-        const uniqueCats = unique(categories);
-        const filteredCats = excludeCategoriesCaseInsensitive(uniqueCats); // NSA removed
-        const catsDisplay = filteredCats.length ? filteredCats.join(", ") : "—";
-        headerText = `PE Category (Completed): ${catsDisplay}\n`;
+      // Build NodeType counts from non-cancelled rows
+      const nodeTypeCounts = {};
+      nonCancelled.forEach(r => {
+        const nt = (r[iNodeType] || "").trim() || "(Unknown)";
+        nodeTypeCounts[nt] = (nodeTypeCounts[nt] || 0) + 1;
+      });
+      // Convert to sorted lines "NAME\t-COUNT"
+      const ntLines = Object.entries(nodeTypeCounts)
+        .sort((a,b) => a[0].localeCompare(b[0]))  // alphabetical; change if you want by count
+        .map(([name,count]) => `${name}\t-${count}`);
 
-        // Printed line immediately after header (same exclusion)
-        printedCatLine = (filteredCats.length ? filteredCats.join(", ") : "—") + "\n";
+      // Key PE Details (numbered, italic Completed)
+      const detailLines = nonCancelled.map((r, idxRow) => {
+        const purpose = (r[iPEPurpose] || "").trim();
+        const dispStatus = statusSelection === "Completed" ? "*Completed*" : (statusSelection || "");
+        return `${idxRow+1}-\t${purpose}\t---\t${dispStatus}`;
+      });
+
+      // Header
+      let headerText = "";
+      if (statusSelection === "Completed") {
+        headerText =
+          `VVM Status ${prettyDate} completed ${completedCount}/${totalCount} ` +
+          `(${totalCount} PE Category) ${completedCount} PE's Completed, ${cancelledCount} Cancelled\n\n`;
+      } else if (statusSelection === "Planned Tonight") {
+        headerText = `Tonight Planned IMS activities ${prettyDate}\n\n`;
       } else {
-        headerText = `VVM Status ${prettyDate} completed ${completedCount}/${totalCount} (${totalCount} PE Category)\n` +
-                     `${completedCount} PE's Completed, ${cancelledCount} Cancelled\n`;
+        headerText = `IMS activities ${prettyDate}\n\n`;
       }
 
-      const summaryLine = `Summary: ${nonCancelled.length} items included.\n`;
-      return headerText + printedCatLine + summaryLine + details;
+      // Assemble final text per your format
+      const nodeTypesBlock = ntLines.join("\n") + (ntLines.length ? "\n\n" : "");
+      const keyHeader = `*Key PE Details*\n\n`;
+      const detailsBlock = detailLines.join("\n");
+
+      return headerText + nodeTypesBlock + keyHeader + detailsBlock;
     }
 
     /*** Wiring ***/
@@ -183,7 +195,7 @@ Auto Date: Planned Tonight → today; Completed → previous day (localized to d
     let parsedRows = [];
 
     function render(){
-      const statusSel = statusSelectEl.value || "";   // FIX: use actual option values
+      const statusSel = statusSelectEl.value || "";
       const text = formatOutput(parsedRows, statusSel);
       formattedOutputEl.textContent = text;
     }
