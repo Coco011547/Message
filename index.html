@@ -1,232 +1,276 @@
 
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="UTF-8" />
+  <title>IMS Activities Excel Formatter – VVM Header & Auto Date</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Send Output to WhatsApp (Twilio + Vercel)</title>
   <style>
-    body { font-family: system-ui, Arial, sans-serif; margin: 24px; line-height: 1.4; }
-    .card { max-width: 860px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 12px; padding: 16px; }
-    h1 { margin: 0 0 10px; font-size: 20px; }
-    label { display:block; margin: 12px 0 6px; font-weight: 600; }
-    input, textarea { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 14px; }
-    textarea { min-height: 110px; resize: vertical; }
-    .row { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
-    @media (max-width: 700px){ .row{ grid-template-columns: 1fr; } }
-    .btns { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
-    button { padding: 10px 14px; border: 0; border-radius: 10px; cursor: pointer; font-weight: 700; }
-    .primary { background: #16a34a; color: white; }
-    .secondary { background: #111827; color: white; }
-    .muted { background: #f3f4f6; color: #111827; }
-    .hint { font-size: 13px; color: #6b7280; margin-top: 6px; }
-    .outputBox { border: 1px dashed #9ca3af; border-radius: 10px; padding: 12px; background: #fafafa; }
-    .status { margin-top: 12px; padding: 10px; border-radius: 10px; display:none; }
-    .ok { background: #ecfdf5; border: 1px solid #10b981; color: #065f46; }
-    .err { background: #fef2f2; border: 1px solid #ef4444; color: #7f1d1d; }
-    code { background: #f3f4f6; padding: 1px 6px; border-radius: 6px; }
+    body { font-family: Segoe UI, Roboto, Arial, sans-serif; margin: 24px; line-height: 1.5; }
+    h1 { font-size: 1.4rem; margin: 0 0 8px; }
+    h2 { font-size: 1.1rem; margin-top: 24px; }
+    label { display:block; margin: 12px 0 4px; font-weight: 600; }
+    input[type="text"], input[type="date"], select, textarea { width: 100%; max-width: 720px; padding: 8px; font-size: 14px; }
+    textarea { height: 160px; }
+    button { padding: 8px 12px; margin-right: 8px; }
+    .mono { font-family: Consolas, "Liberation Mono", "Courier New", monospace; }
+    .muted { color:#666; }
+    .output { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; border-radius: 6px; background: #fafafa; }
+    .small { font-size: 12px; }
+    .row { display:flex; gap:16px; flex-wrap:wrap; }
+    .col { flex: 1 1 320px; }
   </style>
 </head>
-
 <body>
-  <div class="card">
-    <h1>Send Output from index.html to WhatsApp</h1>
+  <h1>IMS Activities Excel Formatter – VVM Header & Auto Date</h1>
+  <p class="muted small">
+    Paste CSV/TSV text or upload file. When <b>Completed</b> is selected, the header uses VVM format and includes Node Type counts and Key PE Details.
+  </p>
 
-    <p class="hint">
-      This page sends your <strong>output text</strong> to a backend endpoint
-      <code>/api/send-whatsapp</code> (Vercel function). Your Twilio credentials must stay on the server.
-    </p>
+  <!-- 1) Input -->
+  <h2>1) Input</h2>
+  <label for="dateInput">Date (auto-changes with Status; you can override):</label>
+  <input id="dateInput" type="date" />
 
-    <!-- Example Inputs (optional) -->
-    <div class="row">
-      <div>
-        <label for="name">Example Input: Name</label>
-        <input id="name" type="text" placeholder="Enter name (optional)" />
-      </div>
-      <div>
-        <label for="value">Example Input: Value</label>
-        <input id="value" type="number" placeholder="Enter a number (optional)" />
-      </div>
-    </div>
+  <label for="fileInput">CSV/TSV/TXT file</label>
+  <input id="fileInput" type="file" />
 
-    <div class="btns">
-      <button class="secondary" id="calcBtn" type="button">Generate Output</button>
-      <button class="muted" id="copyBtn" type="button">Copy Output</button>
-    </div>
+  <label for="sheetName">Sheet name (optional; ignored for CSV/TSV/TXT)</label>
+  <input id="sheetName" type="text" placeholder="e.g., Sheet1" />
 
-    <label>Generated Output (this will be sent)</label>
-    <div id="output" class="outputBox">
-      Click <strong>Generate Output</strong> to create a message.
-    </div>
+  <label for="gridText">OR paste grid text (Row1 headers must include "Node Type", "PE Purpose"; optional "Status" (J/K), "PE Category" (L))</label>
+  <textarea id="gridText" class="mono" placeholder="Node Type,PE Purpose,Status J,Status K,PE Category&#10;MSC,Integration,Completed,,Core"></textarea>
 
-    <div class="row" style="margin-top: 14px;">
-      <div>
-        <label for="toNumber">To (optional)</label>
-        <input
-          id="toNumber"
-          type="text"
-          placeholder="whatsapp:+91xxxxxxxxxx  (leave blank to use WHATSAPP_TO_DEFAULT)"
-        />
-        <div class="hint">
-          Format must be <code>whatsapp:+E164</code> (example: <code>whatsapp:+9199xxxxxxx</code>). 
-        </div>
-      </div>
-      <div>
-        <label for="prefix">Message Prefix (optional)</label>
-        <input id="prefix" type="text" value="Output from index.html:" />
-      </div>
-    </div>
+  <label for="fontColorFilter">Font-color filter:</label>
+  <select id="fontColorFilter">
+    <option value="black-only">Include only Node Type cells with Black / Automatic font</option>
+    <option value="all">Include all rows (ignore font color)</option>
+  </select>
 
-    <label for="extraNote">Extra Note (optional)</label>
-    <textarea id="extraNote" placeholder="Add any extra line(s) before sending..."></textarea>
-
-    <div class="btns">
-      <button class="primary" id="sendBtn" type="button">Send to WhatsApp</button>
-      <button class="muted" id="clearBtn" type="button">Clear</button>
-    </div>
-
-    <div id="statusOk" class="status ok"></div>
-    <div id="statusErr" class="status err"></div>
-
-    <p class="hint">
-      If you are using Twilio <strong>Sandbox</strong>, your WhatsApp must join the sandbox and messages come from
-      <code>whatsapp:+14155238886</code>. 
-    </p>
+  <label for="statusSelect">Status:</label>
+  <select id="statusSelect">
+    <option value="">---</option>
+    <option value="Planned Tonight">Planned Tonight</option>
+    <option value="Completed">Completed</option>
+  </select>
+  <div style="margin-top:8px;">
+    <button id="parseFileBtn">Parse File ▶</button>
+    <button id="parseTextBtn">Parse Pasted Text ▶</button>
+    <button id="clearBtn">Clear</button>
   </div>
 
+  <!-- 2) Output -->
+  <h2>2) Output (Final Text)</h2>
+  <div style="margin-bottom:8px;">
+    <button id="copyBtn">Copy Output</button>
+    <button id="downloadTxtBtn">Download .txt</button>
+    <button id="downloadHtmlBtn">Download as HTML</button>
+  </div>
+  <div id="formattedOutput" class="output mono"></div>
+
+  <!-- Send to WhatsApp -->
+  <h2>Send to WhatsApp</h2>
+  <div class="row">
+    <div class="col">
+      <label for="waNumber">Recipient (E.164, e.g., +9198XXXXXXXX)</label>
+      <input id="waNumber" type="text" placeholder="+91XXXXXXXXXX" />
+    </div>
+  </div>
+  <button id="sendWhatsAppBtn">Send WhatsApp</button>
+  <span class="small muted">Sends via your Vercel backend using Twilio’s WhatsApp API.</span>
+
+  <!-- Logic docs -->
+  <h2>Logic</h2>
+  <pre class="mono small">
+Required headers: "Node Type", "PE Purpose". Optional: "Status"/"Status J"/"Status K", "PE Category" (L).
+Cancelled: if any Status column contains "Cancelled" (case-insensitive), the row is excluded from details and counted in the header.
+Completed header:
+VVM Status {DD Month YYYY} completed {completedCount}/{totalCount} ({totalCount} PE Category) {completedCount} PE's Completed, {cancelledCount} Cancelled
+Then Node Type counts:
+{NodeType}\t-{count}
+Then:
+*Key PE Details*
+Numbered detail lines with "*Completed*" in italics.
+  </pre>
+
   <script>
-    // ---------- Helpers ----------
-    function showOk(msg) {
-      const ok = document.getElementById("statusOk");
-      const err = document.getElementById("statusErr");
-      err.style.display = "none";
-      ok.textContent = msg;
-      ok.style.display = "block";
+    /*** CONFIG: Set your Vercel API endpoint here ***/
+    const API_URL = 'https://messageims.vercel.app/api/send-message'; // TODO: replace with your real URL
+
+    /*** Helpers ***/
+    function todayISO(){ const d=new Date(); return d.toISOString().slice(0,10); }
+    function yesterdayISO(){ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); }
+    function prettyDateFromISO(iso){
+      if (!iso) return "";
+      const d = new Date(iso);
+      // Example: "23 December 2025"
+      return d.toLocaleDateString(undefined,{ day:"2-digit", month:"long", year:"numeric" });
     }
-
-    function showErr(msg) {
-      const ok = document.getElementById("statusOk");
-      const err = document.getElementById("statusErr");
-      ok.style.display = "none";
-      err.textContent = msg;
-      err.style.display = "block";
+    function csvToRows(text){
+      const lines = text.trim().split(/\r?\n/);
+      return lines.map(line => {
+        if (line.includes('\t')) return line.split('\t');  // tab-delimited
+        if (line.includes(','))  return line.split(',');   // comma-delimited
+        if (line.includes(';'))  return line.split(';');   // semicolon-delimited
+        return [line]; // fallback
+      });
     }
+    function unique(arr){ return Array.from(new Set(arr)); }
 
-    function getOutputText() {
-      return (document.getElementById("output").innerText || "").trim();
-    }
+    /*** Core formatting tailored to your requested output ***/
+    function formatOutput(rows, statusSelection) {
+      if (!rows || rows.length === 0) return "No rows parsed.";
+      const headers = rows[0].map(h=>h.trim());
+      const idx = {}; headers.forEach((h,i)=>{ idx[h]=i; });
 
-    function setOutputText(text) {
-      document.getElementById("output").innerText = text;
-    }
-
-    function sanitizeToWhatsAppAddress(value) {
-      // Allow empty (means backend uses WHATSAPP_TO_DEFAULT)
-      if (!value) return "";
-
-      const v = value.trim();
-
-      // Basic validation: should start with "whatsapp:+"
-      if (!v.startsWith("whatsapp:+")) {
-        throw new Error("Invalid To number. Use format: whatsapp:+<countrycode><number>");
+      // Required headers
+      if (!("Node Type" in idx) || !("PE Purpose" in idx)) {
+        return "Missing required headers: Node Type, PE Purpose";
       }
 
-      // Very light check for digits after whatsapp:+
-      const digits = v.replace("whatsapp:+", "");
-      if (!/^\d{8,15}$/.test(digits)) {
-        throw new Error("Invalid To number digits. Example: whatsapp:+919876543210");
+      // Optional columns
+      const statusCols = ["Status","Status J","Status K"].filter(h=>h in idx).map(h=>idx[h]);
+      const iNodeType = idx["Node Type"];
+      const iPEPurpose = idx["PE Purpose"];
+
+      // Cancelled?
+      function isCancelled(r){ return statusCols.some(ci=>((r[ci]||"").toLowerCase().includes("cancelled"))); }
+      const dataRows = rows.slice(1);
+      const nonCancelled = dataRows.filter(r=>!isCancelled(r));
+
+      const totalCount = nonCancelled.length;
+      const completedCount = nonCancelled.filter(r=>statusCols.some(ci=>((r[ci]||"").toLowerCase().includes("completed")))).length;
+      const cancelledCount = dataRows.length - nonCancelled.length;
+
+      // Auto date
+      const dateInput = document.getElementById("dateInput");
+      let selectedDateISO = dateInput.value;
+      if (!selectedDateISO) {
+        if (statusSelection === "Completed") selectedDateISO = yesterdayISO();
+        else if (statusSelection === "Planned Tonight") selectedDateISO = todayISO();
+      }
+      const prettyDate = prettyDateFromISO(selectedDateISO);
+
+      // Build NodeType counts from non-cancelled rows
+      const nodeTypeCounts = {};
+      nonCancelled.forEach(r => {
+        const nt = (r[iNodeType] || "").trim() || "(Unknown)";
+        nodeTypeCounts[nt] = (nodeTypeCounts[nt] || 0) + 1;
+      });
+      // Convert to sorted lines "NAME\t-COUNT"
+      const ntLines = Object.entries(nodeTypeCounts)
+        .sort((a,b) => a[0].localeCompare(b[0]))  // alphabetical; change if you want by count
+        .map(([name,count]) => `${name}\t-${count}`);
+
+      // Key PE Details (numbered, italic Completed)
+      const detailLines = nonCancelled.map((r, idxRow) => {
+        const purpose = (r[iPEPurpose] || "").trim();
+        const dispStatus = statusSelection === "Completed" ? "*Completed*" : (statusSelection || "");
+        return `${idxRow+1}-\t${purpose}\t---\t${dispStatus}`;
+      });
+
+      // Header
+      let headerText = "";
+      if (statusSelection === "Completed") {
+        headerText =
+          `VVM Status ${prettyDate} completed ${completedCount}/${totalCount} ` +
+          `(${totalCount} PE Category) ${completedCount} PE's Completed, ${cancelledCount} Cancelled\n\n`;
+      } else if (statusSelection === "Planned Tonight") {
+        headerText = `Tonight Planned IMS activities ${prettyDate}\n\n`;
+      } else {
+        headerText = `IMS activities ${prettyDate}\n\n`;
       }
 
-      return v;
+      // Assemble final text per your format
+      const nodeTypesBlock = ntLines.join("\n") + (ntLines.length ? "\n\n" : "");
+      const keyHeader = `*Key PE Details*\n\n`;
+      const detailsBlock = detailLines.join("\n");
+
+      return headerText + nodeTypesBlock + keyHeader + detailsBlock;
     }
 
-    // ---------- Demo: Generate Output ----------
-    document.getElementById("calcBtn").addEventListener("click", () => {
-      const name = (document.getElementById("name").value || "").trim();
-      const val = (document.getElementById("value").value || "").trim();
+    /*** Wiring ***/
+    const formattedOutputEl = document.getElementById("formattedOutput");
+    const statusSelectEl = document.getElementById("statusSelect");
+    let parsedRows = [];
 
-      // Customize this section to build your real output
-      const now = new Date().toLocaleString();
-      const lines = [
-        `Generated at: ${now}`,
-        name ? `Name: ${name}` : null,
-        val ? `Value: ${val}` : null,
-        `Status: OK`
-      ].filter(Boolean);
+    function render(){
+      const statusSel = statusSelectEl.value || "";
+      const text = formatOutput(parsedRows, statusSel);
+      formattedOutputEl.textContent = text;
+    }
 
-      setOutputText(lines.join("\n"));
-      showOk("Output generated successfully.");
+    document.getElementById("parseTextBtn").addEventListener("click", ()=>{
+      const raw = document.getElementById("gridText").value||"";
+      if (!raw.trim()) { formattedOutputEl.textContent = "Paste grid text first."; return; }
+      parsedRows = csvToRows(raw);
+      render();
     });
 
-    // ---------- Copy Output ----------
-    document.getElementById("copyBtn").addEventListener("click", async () => {
+    document.getElementById("parseFileBtn").addEventListener("click", async ()=>{
+      const fileEl = document.getElementById("fileInput");
+      const file = fileEl.files && fileEl.files[0];
+      if (!file) { formattedOutputEl.textContent = "Select a file first."; return; }
+      const text = await file.text(); // supports CSV/TSV/TXT
+      parsedRows = csvToRows(text);
+      render();
+    });
+
+    document.getElementById("clearBtn").addEventListener("click", ()=>{
+      document.getElementById("gridText").value = "";
+      document.getElementById("fileInput").value = "";
+      parsedRows = [];
+      formattedOutputEl.textContent = "";
+    });
+
+    statusSelectEl.addEventListener("change", render);
+    document.getElementById("dateInput").addEventListener("change", render);
+
+    // Copy / download
+    document.getElementById("copyBtn").addEventListener("click", async ()=>{
+      const text = formattedOutputEl.textContent||"";
+      try { await navigator.clipboard.writeText(text); alert("Output copied to clipboard."); } catch(e){ alert("Copy failed: "+e.message); }
+    });
+    function download(filename, mime, content){
+      const a=document.createElement("a");
+      a.href=URL.createObjectURL(new Blob([content],{type:mime}));
+      a.download=filename;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    document.getElementById("downloadTxtBtn").addEventListener("click", ()=>{
+      download("IMS_Activities_Formatted.txt","text/plain", formattedOutputEl.textContent||"");
+    });
+    document.getElementById("downloadHtmlBtn").addEventListener("click", ()=>{
+      const text=formattedOutputEl.textContent||"";
+      const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>IMS Output</title></head><body><pre>${escapeHtml(text)}</pre></body></html>`;
+      download("IMS_Activities_Formatted.html","text/html", html);
+    });
+    function escapeHtml(s){
+      return (s||"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    }
+
+    // Send to WhatsApp via Vercel endpoint
+    document.getElementById('sendWhatsAppBtn').addEventListener('click', async () => {
+      const to = (document.getElementById('waNumber').value || '').trim();
+      const body = document.getElementById('formattedOutput').textContent || '';
+      if (!to || !body) { alert('Enter recipient and generate output first.'); return; }
+
       try {
-        const text = getOutputText();
-        await navigator.clipboard.writeText(text);
-        showOk("Output copied to clipboard.");
-      } catch (e) {
-        showErr("Copy failed. Your browser may block clipboard access.");
-      }
-    });
-
-    // ---------- Clear ----------
-    document.getElementById("clearBtn").addEventListener("click", () => {
-      document.getElementById("name").value = "";
-      document.getElementById("value").value = "";
-      document.getElementById("toNumber").value = "";
-      document.getElementById("extraNote").value = "";
-      setOutputText("Click Generate Output to create a message.");
-      document.getElementById("statusOk").style.display = "none";
-      document.getElementById("statusErr").style.display = "none";
-    });
-
-    // ---------- Send to WhatsApp ----------
-    document.getElementById("sendBtn").addEventListener("click", async () => {
-      try {
-        const output = getOutputText();
-        if (!output || output === "Click Generate Output to create a message.") {
-          showErr("No real output found. Click 'Generate Output' first.");
-          return;
-        }
-
-        const prefix = (document.getElementById("prefix").value || "").trim();
-        const extra = (document.getElementById("extraNote").value || "").trim();
-
-        // Build final message
-        let message = "";
-        if (prefix) message += prefix + "\n";
-        if (extra) message += extra + "\n\n";
-        message += output;
-
-        // Optional: keep message size reasonable for reliability
-        const MAX_LEN = 1500;
-        if (message.length > MAX_LEN) {
-          message = message.slice(0, MAX_LEN) + "\n…(trimmed)";
-        }
-
-        // Optional "to"
-        const toRaw = document.getElementById("toNumber").value;
-        const to = sanitizeToWhatsAppAddress(toRaw);
-
-        showOk("Sending…");
-
-        const resp = await fetch("/api/send-whatsapp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message, ...(to ? { to } : {}) })
+        const resp = await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ channel: 'whatsapp_twilio', to, body })
         });
-
-        const data = await resp.json().catch(() => ({}));
-
-        if (!resp.ok) {
-          throw new Error(data.error || `HTTP ${resp.status} error while sending.`);
-        }
-
-        showOk(`✅ Sent to WhatsApp successfully! SID: ${data.sid || "(no sid returned)"}`);
-      } catch (err) {
-        showErr("❌ " + err.message);
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Failed to send');
+        alert(`WhatsApp queued: ${data.id || 'OK'}`);
+      } catch (e) {
+        alert(`Send failed: ${e.message}`);
       }
     });
+
+    // Initialize defaults
+    document.getElementById("dateInput").value = todayISO();
   </script>
 </body>
 </html>
