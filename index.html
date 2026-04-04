@@ -50,7 +50,7 @@
   <label for="statusSelect">Status:</label>
   <select id="statusSelect">
     <option value="">---</option>
-    <option value="Planned Tonight">*Planned Tonight*</option>
+    <option value="Planned Tonight">Planned Tonight</option>
     <option value="Completed">Completed</option>
   </select>
   <div style="margin-top:8px;">
@@ -166,7 +166,7 @@ Numbered detail lines with "*Completed*" in italics.
       const detailLines = nonCancelled.map((r, idxRow) => {
         const purpose = (r[iPEPurpose] || "").trim();
         const dispStatus = statusSelection === "Completed" ? "*Completed*" : (statusSelection || "");
-        return `${idxRow+1}-\t${purpose}\t---\t${dispStatus}`;
+        return `${idxRow+1}-\t${purpose}\t---\t$"*"{dispStatus}"*"`;
       });
 
       // Header
