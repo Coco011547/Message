@@ -1,276 +1,212 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>IMS Activities Excel Formatter – VVM Header & Auto Date</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body { font-family: Segoe UI, Roboto, Arial, sans-serif; margin: 24px; line-height: 1.5; }
-    h1 { font-size: 1.4rem; margin: 0 0 8px; }
-    h2 { font-size: 1.1rem; margin-top: 24px; }
-    label { display:block; margin: 12px 0 4px; font-weight: 600; }
-    input[type="text"], input[type="date"], select, textarea { width: 100%; max-width: 720px; padding: 8px; font-size: 14px; }
-    textarea { height: 160px; }
-    button { padding: 8px 12px; margin-right: 8px; }
-    .mono { font-family: Consolas, "Liberation Mono", "Courier New", monospace; }
-    .muted { color:#666; }
-    .output { white-space: pre-wrap; border: 1px solid #ddd; padding: 12px; border-radius: 6px; background: #fafafa; }
-    .small { font-size: 12px; }
-    .row { display:flex; gap:16px; flex-wrap:wrap; }
-    .col { flex: 1 1 320px; }
-  </style>
+<meta charset="UTF-8">
+<title>IMS Spreadsheet Formatter</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+
+<style>
+body {
+  font-family: Segoe UI, Roboto, Arial, sans-serif;
+  margin: 24px;
+}
+h1 { font-size: 1.4rem; }
+h2 { font-size: 1.1rem; margin-top: 28px; }
+label { font-weight: 600; display:block; margin-top:12px; }
+input, select {
+  width:100%;
+  max-width:720px;
+  padding:8px;
+}
+button {
+  padding:8px 12px;
+  margin-top:10px;
+  margin-right:6px;
+}
+.output {
+  white-space: pre-wrap;
+  font-family: Consolas, monospace;
+  border:1px solid #ccc;
+  background:#fafafa;
+  padding:16px;
+  border-radius:6px;
+}
+.muted { font-size:12px; color:#666; }
+</style>
+
+<!-- SheetJS (local XLSX reader) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
+
 <body>
-  <h1>IMS Activities Excel Formatter – VVM Header & Auto Date</h1>
-  <p class="muted small">
-    Paste CSV/TSV text or upload file. When <b>Completed</b> is selected, the header uses VVM format and includes Node Type counts and Key PE Details.
-  </p>
 
-  <!-- 1) Input -->
-  <h2>1) Input</h2>
-  <label for="dateInput">Date (auto-changes with Status; you can override):</label>
-  <input id="dateInput" type="date" />
+<h1>IMS Activities Formatter (Spreadsheet‑Driven)</h1>
+<p class="muted">
+Excel / CSV is the source of truth. Output remains until a new file is loaded.
+</p>
 
-  <label for="fileInput">CSV/TSV/TXT file</label>
-  <input id="fileInput" type="file" />
+<h2>1) Load Spreadsheet</h2>
 
-  <label for="sheetName">Sheet name (optional; ignored for CSV/TSV/TXT)</label>
-  <input id="sheetName" type="text" placeholder="e.g., Sheet1" />
+<label>Date</label>
+<input type="date" id="dateInput">
 
-  <label for="gridText">OR paste grid text (Row1 headers must include "Node Type", "PE Purpose"; optional "Status" (J/K), "PE Category" (L))</label>
-  <textarea id="gridText" class="mono" placeholder="Node Type,PE Purpose,Status J,Status K,PE Category&#10;MSC,Integration,Completed,,Core"></textarea>
+<label>Spreadsheet (.xlsx or .csv)</label>
+<input type="file" id="fileInput" accept=".xlsx,.csv">
 
-  <label for="fontColorFilter">Font-color filter:</label>
-  <select id="fontColorFilter">
-    <option value="black-only">Include only Node Type cells with Black / Automatic font</option>
-    <option value="all">Include all rows (ignore font color)</option>
-  </select>
+<label>Status</label>
+<select id="statusSelect">
+  <option value="">---</option>
+  <option value="Planned Tonight">Planned Tonight</option>
+  <option value="Completed">Completed</option>
+</select>
 
-  <label for="statusSelect">Status:</label>
-  <select id="statusSelect">
-    <option value="">---</option>
-    <option value="Planned Tonight">Planned Tonight</option>
-    <option value="Completed">Completed</option>
-  </select>
-  <div style="margin-top:8px;">
-    <button id="parseFileBtn">Parse File ▶</button>
-    <button id="parseTextBtn">Parse Pasted Text ▶</button>
-    <button id="clearBtn">Clear</button>
-  </div>
+<br>
+<button id="loadBtn">Load Spreadsheet</button>
+<button id="ocrModeBtn">OCR Mode</button>
 
-  <!-- 2) Output -->
-  <h2>2) Output (Final Text)</h2>
-  <div style="margin-bottom:8px;">
-    <button id="copyBtn">Copy Output</button>
-    <button id="downloadTxtBtn">Download .txt</button>
-    <button id="downloadHtmlBtn">Download as HTML</button>
-  </div>
-  <div id="formattedOutput" class="output mono"></div>
+<h2>2) Formatted Output</h2>
+<button id="copyBtn">Copy</button>
 
-  <!-- Send to WhatsApp -->
-  <h2>Send to WhatsApp</h2>
-  <div class="row">
-    <div class="col">
-      <label for="waNumber">Recipient (E.164, e.g., +9198XXXXXXXX)</label>
-      <input id="waNumber" type="text" placeholder="+91XXXXXXXXXX" />
-    </div>
-  </div>
-  <button id="sendWhatsAppBtn">Send WhatsApp</button>
-  <span class="small muted">Sends via your Vercel backend using Twilio’s WhatsApp API.</span>
+<div id="formattedOutput" class="output"></div>
 
-  <!-- Logic docs -->
-  <h2>Logic</h2>
-  <pre class="mono small">
-Required headers: "Node Type", "PE Purpose". Optional: "Status"/"Status J"/"Status K", "PE Category" (L).
-Cancelled: if any Status column contains "Cancelled" (case-insensitive), the row is excluded from details and counted in the header.
-Completed header:
-VVM Status {DD Month YYYY} completed {completedCount}/{totalCount} ({totalCount} PE Category) {completedCount} PE's Completed, {cancelledCount} Cancelled
-Then Node Type counts:
-{NodeType}\t-{count}
-Then:
-*Key PE Details*
-Numbered detail lines with "*Completed*" in italics.
-  </pre>
+<script>
+/* ---------- helpers ---------- */
+const todayISO = () => new Date().toISOString().slice(0,10);
+const yesterdayISO = () => {
+  const d = new Date(); d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0,10);
+};
 
-  <script>
-    /*** CONFIG: Set your Vercel API endpoint here ***/
-    const API_URL = 'https://messageims.vercel.app/api/send-message'; // TODO: replace with your real URL
+const prettyDate = iso =>
+  new Date(iso).toLocaleDateString(undefined,{
+    day:'2-digit', month:'long', year:'numeric'
+  });
 
-    /*** Helpers ***/
-    function todayISO(){ const d=new Date(); return d.toISOString().slice(0,10); }
-    function yesterdayISO(){ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); }
-    function prettyDateFromISO(iso){
-      if (!iso) return "";
-      const d = new Date(iso);
-      // Example: "23 December 2025"
-      return d.toLocaleDateString(undefined,{ day:"2-digit", month:"long", year:"numeric" });
-    }
-    function csvToRows(text){
-      const lines = text.trim().split(/\r?\n/);
-      return lines.map(line => {
-        if (line.includes('\t')) return line.split('\t');  // tab-delimited
-        if (line.includes(','))  return line.split(',');   // comma-delimited
-        if (line.includes(';'))  return line.split(';');   // semicolon-delimited
-        return [line]; // fallback
-      });
-    }
-    function unique(arr){ return Array.from(new Set(arr)); }
+/* ---------- spreadsheet reader ---------- */
+function readSpreadsheet(file){
+  return new Promise(resolve=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type:'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      resolve(XLSX.utils.sheet_to_json(ws, { header:1 }));
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
 
-    /*** Core formatting tailored to your requested output ***/
-    function formatOutput(rows, statusSelection) {
-      if (!rows || rows.length === 0) return "No rows parsed.";
-      const headers = rows[0].map(h=>h.trim());
-      const idx = {}; headers.forEach((h,i)=>{ idx[h]=i; });
+/* ---------- formatting logic ---------- */
+function formatOutput(rows, statusSel){
+  if(!rows || !rows.length) return '';
 
-      // Required headers
-      if (!("Node Type" in idx) || !("PE Purpose" in idx)) {
-        return "Missing required headers: Node Type, PE Purpose";
-      }
+  const headers = rows[0].map(h=>String(h).trim());
+  const idx = {};
+  headers.forEach((h,i)=>idx[h]=i);
 
-      // Optional columns
-      const statusCols = ["Status","Status J","Status K"].filter(h=>h in idx).map(h=>idx[h]);
-      const iNodeType = idx["Node Type"];
-      const iPEPurpose = idx["PE Purpose"];
+  if(idx['Node Type'] === undefined || idx['PE Purpose'] === undefined)
+    return 'Missing required headers: Node Type, PE Purpose';
 
-      // Cancelled?
-      function isCancelled(r){ return statusCols.some(ci=>((r[ci]||"").toLowerCase().includes("cancelled"))); }
-      const dataRows = rows.slice(1);
-      const nonCancelled = dataRows.filter(r=>!isCancelled(r));
+  const statusCols = ['Status','Status J','Status K']
+    .filter(h=>h in idx).map(h=>idx[h]);
 
-      const totalCount = nonCancelled.length;
-      const completedCount = nonCancelled.filter(r=>statusCols.some(ci=>((r[ci]||"").toLowerCase().includes("completed")))).length;
-      const cancelledCount = dataRows.length - nonCancelled.length;
+  const iNode = idx['Node Type'];
+  const iPE   = idx['PE Purpose'];
+  const iCat  = idx['PE Category'];
 
-      // Auto date
-      const dateInput = document.getElementById("dateInput");
-      let selectedDateISO = dateInput.value;
-      if (!selectedDateISO) {
-        if (statusSelection === "Completed") selectedDateISO = yesterdayISO();
-        else if (statusSelection === "Planned Tonight") selectedDateISO = todayISO();
-      }
-      const prettyDate = prettyDateFromISO(selectedDateISO);
+  const data = rows.slice(1);
+  const isCancelled = r =>
+    statusCols.some(i=>String(r[i]||'').toLowerCase().includes('cancelled'));
 
-      // Build NodeType counts from non-cancelled rows
-      const nodeTypeCounts = {};
-      nonCancelled.forEach(r => {
-        const nt = (r[iNodeType] || "").trim() || "(Unknown)";
-        nodeTypeCounts[nt] = (nodeTypeCounts[nt] || 0) + 1;
-      });
-      // Convert to sorted lines "NAME\t-COUNT"
-      const ntLines = Object.entries(nodeTypeCounts)
-        .sort((a,b) => a[0].localeCompare(b[0]))  // alphabetical; change if you want by count
-        .map(([name,count]) => `${name}\t-${count}`);
+  const nonCancelled = data.filter(r=>!isCancelled(r));
+  const cancelledCount = data.length - nonCancelled.length;
 
-      // Key PE Details (numbered, italic Completed)
-      const detailLines = nonCancelled.map((r, idxRow) => {
-        const purpose = (r[iPEPurpose] || "").trim();
-        const dispStatus = statusSelection === "Completed" ? "*Completed*" : (statusSelection || "");
-        return `${idxRow+1}-\t${purpose}\t---\t$"*"{dispStatus}"*"`;
-      });
+  let effective = nonCancelled;
+  if(statusSel === 'Completed' && statusCols.length){
+    effective = nonCancelled.filter(r =>
+      statusCols.some(i=>String(r[i]||'').toLowerCase().includes('completed'))
+    );
+  }
 
-      // Header
-      let headerText = "";
-      if (statusSelection === "Completed") {
-        headerText =
-          `VVM Status ${prettyDate} completed ${completedCount}/${totalCount} ` +
-          `(${totalCount} PE Category) ${completedCount} PE's Completed, ${cancelledCount} Cancelled\n\n`;
-      } else if (statusSelection === "Planned Tonight") {
-        headerText = `Tonight Planned IMS activities ${prettyDate}\n\n`;
-      } else {
-        headerText = `IMS activities ${prettyDate}\n\n`;
-      }
+  const totalCount = effective.length;
+  const completedCount = effective.length;
 
-      // Assemble final text per your format
-      const nodeTypesBlock = ntLines.join("\n") + (ntLines.length ? "\n\n" : "");
-      const keyHeader = `*Key PE Details*\n\n`;
-      const detailsBlock = detailLines.join("\n");
+  let peCatCount = totalCount;
+  if(iCat !== undefined){
+    peCatCount = new Set(
+      nonCancelled.map(r=>String(r[iCat]||'').trim()).filter(Boolean)
+    ).size;
+  }
 
-      return headerText + nodeTypesBlock + keyHeader + detailsBlock;
-    }
+  let d = dateInput.value;
+  if(!d) d = statusSel === 'Completed' ? yesterdayISO() : todayISO();
 
-    /*** Wiring ***/
-    const formattedOutputEl = document.getElementById("formattedOutput");
-    const statusSelectEl = document.getElementById("statusSelect");
-    let parsedRows = [];
+  const ntCount = {};
+  effective.forEach(r=>{
+    const nt = String(r[iNode]||'(Unknown)').trim();
+    ntCount[nt] = (ntCount[nt]||0) + 1;
+  });
 
-    function render(){
-      const statusSel = statusSelectEl.value || "";
-      const text = formatOutput(parsedRows, statusSel);
-      formattedOutputEl.textContent = text;
-    }
+  const ntBlock = Object.entries(ntCount)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .map(([k,v])=>`${k}\t-${v}`)
+    .join('\n');
 
-    document.getElementById("parseTextBtn").addEventListener("click", ()=>{
-      const raw = document.getElementById("gridText").value||"";
-      if (!raw.trim()) { formattedOutputEl.textContent = "Paste grid text first."; return; }
-      parsedRows = csvToRows(raw);
-      render();
-    });
+  let header='';
+  if(statusSel === 'Completed'){
+    header =
+`*VVM Status* ${prettyDate(d)} completed ${completedCount}/${totalCount} (${peCatCount} PE Category) ${completedCount} PE's Completed, ${cancelledCount} Cancelled\n\n`;
+  } else if(statusSel === 'Planned Tonight'){
+    header = `*Planned Tonight* IMS activities ${prettyDate(d)}\n\n`;
+  } else {
+    header = `IMS activities ${prettyDate(d)}\n\n`;
+  }
 
-    document.getElementById("parseFileBtn").addEventListener("click", async ()=>{
-      const fileEl = document.getElementById("fileInput");
-      const file = fileEl.files && fileEl.files[0];
-      if (!file) { formattedOutputEl.textContent = "Select a file first."; return; }
-      const text = await file.text(); // supports CSV/TSV/TXT
-      parsedRows = csvToRows(text);
-      render();
-    });
+  const details = effective.map((r,i)=>
+    `${i+1}-\t${r[iPE]||''}\t---\t${statusSel==='Planned Tonight'
+      ? '*Planned Tonight*' : '*Completed*'}`
+  ).join('\n\n');
 
-    document.getElementById("clearBtn").addEventListener("click", ()=>{
-      document.getElementById("gridText").value = "";
-      document.getElementById("fileInput").value = "";
-      parsedRows = [];
-      formattedOutputEl.textContent = "";
-    });
+  return header + ntBlock + '\n\n*Key PE Details*\n\n' + details;
+}
 
-    statusSelectEl.addEventListener("change", render);
-    document.getElementById("dateInput").addEventListener("change", render);
+/* ---------- wiring ---------- */
+const out = document.getElementById('formattedOutput');
 
-    // Copy / download
-    document.getElementById("copyBtn").addEventListener("click", async ()=>{
-      const text = formattedOutputEl.textContent||"";
-      try { await navigator.clipboard.writeText(text); alert("Output copied to clipboard."); } catch(e){ alert("Copy failed: "+e.message); }
-    });
-    function download(filename, mime, content){
-      const a=document.createElement("a");
-      a.href=URL.createObjectURL(new Blob([content],{type:mime}));
-      a.download=filename;
-      document.body.appendChild(a); a.click(); a.remove();
-    }
-    document.getElementById("downloadTxtBtn").addEventListener("click", ()=>{
-      download("IMS_Activities_Formatted.txt","text/plain", formattedOutputEl.textContent||"");
-    });
-    document.getElementById("downloadHtmlBtn").addEventListener("click", ()=>{
-      const text=formattedOutputEl.textContent||"";
-      const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>IMS Output</title></head><body><pre>${escapeHtml(text)}</pre></body></html>`;
-      download("IMS_Activities_Formatted.html","text/html", html);
-    });
-    function escapeHtml(s){
-      return (s||"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-    }
+loadBtn.onclick = async()=>{
+  if(!fileInput.files[0]) return;
+  const rows = await readSpreadsheet(fileInput.files[0]);
+  const text = formatOutput(rows, statusSelect.value);
+  out.textContent = text;
+};
 
-    // Send to WhatsApp via Vercel endpoint
-    document.getElementById('sendWhatsAppBtn').addEventListener('click', async () => {
-      const to = (document.getElementById('waNumber').value || '').trim();
-      const body = document.getElementById('formattedOutput').textContent || '';
-      if (!to || !body) { alert('Enter recipient and generate output first.'); return; }
+copyBtn.onclick = () =>
+  navigator.clipboard.writeText(out.textContent || '');
 
-      try {
-        const resp = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ channel: 'whatsapp_twilio', to, body })
-        });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || 'Failed to send');
-        alert(`WhatsApp queued: ${data.id || 'OK'}`);
-      } catch (e) {
-        alert(`Send failed: ${e.message}`);
-      }
-    });
+ocrModeBtn.onclick = () => {
+  const w = window.open('', '_blank');
+  w.document.write(`
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>IMS OCR Mode</title>
+      <style>
+        body {
+          font-family: Consolas, monospace;
+          padding: 24px;
+          font-size: 18px;
+          line-height: 1.8;
+          white-space: pre-wrap;
+        }
+      </style>
+    </head>
+    <body>${out.textContent.replace(/</g,'&lt;')}</body>
+    </html>
+  `);
+};
 
-    // Initialize defaults
-    document.getElementById("dateInput").value = todayISO();
-  </script>
+dateInput.value = todayISO();
+</script>
+
 </body>
 </html>
